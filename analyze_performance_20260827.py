@@ -125,6 +125,9 @@ CONFIG_MARKERS = {
     "A": "o-", "B": "v-", "C": "P-", "D": "X-",
     "E": "D-", "F": "s-", "G": "^--",
 }
+SAVE_DD_ERROR_HEATMAP_FIG = False
+SAVE_EQUIV_BASIS_3D_FIG = False
+SAVE_EQUIV_BASIS_2D_FIG = False
 
 
 def active_config_labels(results=None):
@@ -150,18 +153,21 @@ _BELLHOP_DIRS = [
 for _bellhop_dir in _BELLHOP_DIRS:
     if os.path.isdir(_bellhop_dir) and _bellhop_dir not in sys.path:
         sys.path.append(_bellhop_dir)
+_BELLHOP_IMPORT_ERROR = None
 try:
     from bellhop_water_channel import (water_channel_gen, load_channel_metadata,
                                         extract_multipath_taps, estimate_doppler)
     _HAS_BELLHOP = True
-except ImportError:
+except Exception as exc:
     _HAS_BELLHOP = False
-    print("  [INFO] bellhop_water_channel 模块未找到，水声信道 BER 将跳过")
+    _BELLHOP_IMPORT_ERROR = exc
+    print(f"  [INFO] bellhop_water_channel 模块不可用，水声信道 BER 将无法生成: {exc}")
 
-WATER_CHANNEL_MAT = os.path.join(
-    "water_channel_data", "water_channel_otfs.mat")
+WATER_CHANNEL_REL = os.path.join("water_channel_data", "water_channel_otfs.mat")
+WATER_CHANNEL_ENV = "SMARTOTFS_WATER_CHANNEL_MAT"
 WATER_DELTA_F = 250.0
 WATER_FC = 3000.0
+REQUIRE_WATER_BER = True
 
 
 # ======================= 模型定义 =======================
@@ -1423,8 +1429,14 @@ def run_equivalent_basis_analysis(results, val_dataset, fig_dir, mat_dir):
     energies = {"std": energy_std}
     for lbl in labels:
         energies[lbl] = basis_mat[f"energy_basis_{lbl}"]
-    plot_equivalent_basis_3d(energies, m0, n0, fig_dir)
-    plot_equivalent_basis_2d(energies, m0, n0, fig_dir)
+    if SAVE_EQUIV_BASIS_3D_FIG:
+        plot_equivalent_basis_3d(energies, m0, n0, fig_dir)
+    else:
+        print("  跳过保存: equivalent_basis_3d_Config_A_to_G.png")
+    if SAVE_EQUIV_BASIS_2D_FIG:
+        plot_equivalent_basis_2d(energies, m0, n0, fig_dir)
+    else:
+        print("  跳过保存: equivalent_basis_2d_Config_A_to_G.png")
     plot_equivalent_basis_metrics(metrics_all, fig_dir)
 
     savemat(os.path.join(mat_dir, "equivalent_basis_Config_A_to_G.mat"), basis_mat, do_compression=True)
@@ -1607,6 +1619,65 @@ def build_water_channel_cache(water_lt_tot, water_hmat, water_dt, water_df, wate
     return cache
 
 
+def resolve_water_channel_mat():
+    """Find the WATER channel MAT file from env, common relative paths, or project search."""
+    tried = []
+    env_path = os.environ.get(WATER_CHANNEL_ENV, "").strip()
+    candidates = []
+
+    if env_path:
+        candidates.append(env_path)
+    candidates.extend([
+        os.path.join(PROJECT_ROOT, WATER_CHANNEL_REL),
+        os.path.join(PROJECT_ROOT, "water_channel_otfs.mat"),
+        os.path.join(PROJECT_ROOT, "generate_bellhop_water_channel", "water_channel_otfs.mat"),
+        os.path.join(PROJECT_ROOT, "channel_simulator", "water_channel_otfs.mat"),
+    ])
+
+    for path in candidates:
+        abs_path = os.path.abspath(path)
+        tried.append(abs_path)
+        if os.path.exists(abs_path):
+            return abs_path, tried
+
+    for dirpath, _, filenames in os.walk(PROJECT_ROOT):
+        if "performance_analysis_result" in dirpath:
+            continue
+        for filename in filenames:
+            if filename == "water_channel_otfs.mat":
+                abs_path = os.path.join(dirpath, filename)
+                tried.append(abs_path)
+                return abs_path, tried
+
+    return None, tried
+
+
+def select_ber_channel_types(require_water=True):
+    """Select BER channels and fail loudly if requested WATER data is unavailable."""
+    channel_types = ["AWGN", "EVA"]
+    water_reasons = []
+    water_mat, tried_paths = resolve_water_channel_mat()
+
+    if not _HAS_BELLHOP:
+        water_reasons.append(f"bellhop_water_channel import failed: {_BELLHOP_IMPORT_ERROR}")
+    if water_mat is None:
+        water_reasons.append(
+            "missing WATER channel file. Tried: " + ", ".join(tried_paths)
+        )
+
+    if water_reasons:
+        message = "WATER BER cannot be generated because " + "; ".join(water_reasons)
+        if require_water:
+            raise RuntimeError(message)
+        print(f"  [WARNING] {message}")
+        return channel_types, None
+
+    channel_types.append("WATER")
+    print(f"  WATER channel file: {os.path.relpath(water_mat, PROJECT_ROOT)}")
+    print(f"  WATER parameters: delta_f={WATER_DELTA_F:.1f} Hz, fc={WATER_FC:.1f} Hz")
+    return channel_types, water_mat
+
+
 def run_ber_simulation(val_dataset, fig_dir, mat_dir):
     """对 Config_A_to_G 四组配置进行 AWGN / EVA / WATER 信道 BER 仿真"""
     print("\n" + "=" * 60)
@@ -1618,14 +1689,13 @@ def run_ber_simulation(val_dataset, fig_dir, mat_dir):
     model_names = [lbl for lbl in ANALYSIS_CONFIGS if os.path.exists(CONFIG_MAP[lbl]["weight"])]
     signal_names = ["Target"] + model_names
 
-    # 信道类型：AWGN、EVA 始终可用，WATER 需 bellhop 模块
-    channel_types = ["AWGN", "EVA"]
-    if _HAS_BELLHOP and os.path.exists(WATER_CHANNEL_MAT):
-        channel_types.append("WATER")
-        print(f"  WATER channel file: {WATER_CHANNEL_MAT}")
-        print(f"  WATER parameters: delta_f={WATER_DELTA_F:.1f} Hz, fc={WATER_FC:.1f} Hz")
+    # 信道类型：AWGN、EVA、水声 WATER。WATER 默认必需，避免静默漏图。
+    channel_selection = select_ber_channel_types(require_water=REQUIRE_WATER_BER)
+    if isinstance(channel_selection, tuple):
+        channel_types, water_channel_mat = channel_selection
     else:
-        print("  [INFO] WATER 信道跳过（bellhop模块或信道数据不可用）")
+        channel_types = channel_selection
+        water_channel_mat = None
 
     # 构建模型（Config_A_to_G）
     models = {}
@@ -1655,7 +1725,7 @@ def run_ber_simulation(val_dataset, fig_dir, mat_dir):
         print(f"    {lbl}: {num_frames} frames")
 
     # 加载 Target (IDFT 基线) 信号，与 Config_A_to_G 使用完全相同的帧
-    print(f"    Loading Target (IDFT) signals...")
+    print(f"    Loading Target Regulated OTFS signals...")
     target_signals = []
     for i in range(num_frames):
         _, target_dd, _ = val_dataset[i]
@@ -1670,19 +1740,25 @@ def run_ber_simulation(val_dataset, fig_dir, mat_dir):
     water_lt_tot = 0
     if "WATER" in channel_types:
         from scipy.io import loadmat as _loadmat
-        water_data = _loadmat(WATER_CHANNEL_MAT)
-        water_hmat = water_data['hmat']
-        water_dt = float(water_data['dt'].ravel()[0])
-        water_df = float(water_data['df'].ravel()[0])
-        water_meta = load_channel_metadata(WATER_CHANNEL_MAT)
-        water_lt_tot = water_meta['Lt_tot']
-        print(f"    Water channel: {water_meta['Lf']} freq x {water_lt_tot} time steps")
+        try:
+            water_data = _loadmat(water_channel_mat)
+            water_hmat = water_data['hmat']
+            water_dt = float(water_data['dt'].ravel()[0])
+            water_df = float(water_data['df'].ravel()[0])
+            water_meta = load_channel_metadata(water_channel_mat)
+            water_lt_tot = int(water_meta['Lt_tot'])
+            if water_lt_tot <= 0:
+                raise ValueError("WATER channel has no time snapshots")
+            print(f"    Water channel: {water_meta['Lf']} freq x {water_lt_tot} time steps")
 
-        water_all_paths = extract_multipath_taps(water_hmat, water_dt, water_df, peak_threshold_db=-20)
-        water_all_dopplers = estimate_doppler(water_all_paths, water_dt, WATER_FC)
-        print(f"    Extracted multipath for {water_lt_tot} snapshots")
-        water_cache = build_water_channel_cache(
-            water_lt_tot, water_hmat, water_dt, water_df, water_all_paths, water_all_dopplers)
+            water_all_paths = extract_multipath_taps(water_hmat, water_dt, water_df, peak_threshold_db=-20)
+            water_all_dopplers = estimate_doppler(water_all_paths, water_dt, WATER_FC)
+            print(f"    Extracted multipath for {water_lt_tot} snapshots")
+            water_cache = build_water_channel_cache(
+                water_lt_tot, water_hmat, water_dt, water_df, water_all_paths, water_all_dopplers)
+        except Exception as exc:
+            water_rel = os.path.relpath(water_channel_mat, PROJECT_ROOT) if water_channel_mat else WATER_CHANNEL_REL
+            raise RuntimeError(f"Failed to prepare WATER BER channel from {water_rel}: {exc}") from exc
 
     ber_results = {}
     for ch_type in channel_types:
@@ -1753,7 +1829,7 @@ def run_ber_simulation(val_dataset, fig_dir, mat_dir):
     colors_ber = {"Target": [0.00, 0.00, 0.00],
                   **{lbl: CONFIG_COLORS[lbl] for lbl in model_names}}
     markers_ber = {"Target": "o-", **{lbl: CONFIG_MARKERS[lbl] for lbl in model_names}}
-    labels_ber = {"Target": "Target (IDFT OTFS Baseline)",
+    labels_ber = {"Target": "Target (Regulated OTFS Baseline)",
                   **{lbl: CONFIG_MAP[lbl]["label"] for lbl in model_names}}
     ms_ber, lw_ber = 8, 2.0
 
@@ -1792,6 +1868,9 @@ def run_ber_simulation(val_dataset, fig_dir, mat_dir):
 
     # ---- 保存 BER MAT 数据 ----
     print("\n=== Saving BER MAT data ===")
+    if REQUIRE_WATER_BER and "WATER" not in ber_results:
+        raise RuntimeError("WATER BER was required but no WATER results were generated.")
+
     ber_mat = {"SNR_dB": np.ascontiguousarray(SNR_dB_RANGE), "M": M, "N": N,
                "modulation_order": MODULATION_ORDER, "num_frames": num_frames,
                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1807,8 +1886,17 @@ def run_ber_simulation(val_dataset, fig_dir, mat_dir):
     for ch_type in channel_types:
         for sig_name in signal_names:
             ber_mat[f"ber_{sig_name}_{ch_type}"] = np.ascontiguousarray(ber_results[ch_type][sig_name])
+
+    if REQUIRE_WATER_BER:
+        missing_water = [f"ber_{sig_name}_WATER" for sig_name in signal_names
+                         if f"ber_{sig_name}_WATER" not in ber_mat]
+        if missing_water:
+            raise RuntimeError(f"WATER BER fields missing from MAT output: {missing_water}")
+
     savemat(os.path.join(mat_dir, "ber_results.mat"), ber_mat, do_compression=True)
     print(f"  saved: ber_results.mat")
+    if "WATER" in channel_types:
+        print(f"  saved: ber_water.png and ber_*_WATER fields")
 
     return ber_results
 
@@ -1856,7 +1944,10 @@ def main():
     print("\n=== Plotting Part 1: 互相关 / PAPR / DD误差 ===")
     plot_cross_correlation(results, target_auto, fig_dir)
     plot_papr_ccdf(results, all_target_papr, fig_dir)
-    plot_dd_error_heatmap(results, fig_dir)
+    if SAVE_DD_ERROR_HEATMAP_FIG:
+        plot_dd_error_heatmap(results, fig_dir)
+    else:
+        print("  跳过保存: dd_error_heatmap_Config_A_to_G.png")
     plot_dd_error_profiles(results, fig_dir)
 
     # ---- 保存 Part 1 MAT ----
@@ -2019,5 +2110,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

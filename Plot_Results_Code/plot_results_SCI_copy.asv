@@ -1,0 +1,956 @@
+%% plot_results-copy.m
+% SmartOTFS performance visualization -- Config A vs G vs I.
+%
+% Run this copied script from the visualization_scripts directory.
+
+clear; close all; clc;
+
+%% ========================================================================
+%% 0. Path & Configuration
+%% ========================================================================
+
+script_dir = fileparts(mfilename('fullpath'));
+root_dir = fileparts(script_dir);
+output_dir = fullfile(script_dir, ['plot_results_', datestr(now, 'yyyymmdd_HHMMSS')]);
+if ~exist(output_dir, 'dir')
+    mkdir(output_dir);
+end
+fprintf('Figure output dir: %s\n', relative_path(root_dir, output_dir));
+
+config_order = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'I'};
+config_name_map = containers.Map( ...
+    {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'I'}, ...
+    {'Std-TF OTFS', 'GQA-TF OTFS', 'Differential-TF OTFS', ...
+     'MLA-TF OTFS', 'Dual-Axis-TF OTFS', 'BoltAttention-TF OTFS', ...
+     'Smart OTFS', 'Smart OTFS'});
+target_label = 'Regulated OTFS';
+
+target_color = [0.00 0.45 0.74];  % RegulatedOTFS -- MATLAB default blue
+color_palette = {
+    [0.3010 0.7450 0.9330];   % A -- Std-TF OTFS, fresh cyan
+    [0.4200 0.5600 0.9300];   % B -- GQA-TF OTFS, fresh periwinkle
+    [0.4660 0.7740 0.1880];   % C -- Differential-TF OTFS, fresh green
+    [0.9290 0.6940 0.1250];   % D -- MLA-TF OTFS, fresh yellow
+    [0.9500 0.5000 0.2200];   % E -- Dual-Axis-TF OTFS, fresh orange
+    [0.9100 0.3500 0.5600];   % F -- BoltAttention-TF OTFS, fresh rose
+    [0.6350 0.0780 0.1840];   % G -- PhaseLoom-BoltAttention OTFS, deep rose
+    [0.9100 0.3500 0.5600];   % I -- SmartOTFS
+};
+marker_palette = {'s-', 'o-', 'v-', 'x-', '^-', 'd-', 'p-', '^--', '+-'};
+ms = 7; lw = 2.5;
+smart_label = 'Smart OTFS';
+smart_color = color_palette{6};
+plot_dd_error_heatmap = false;
+plot_equiv_basis_3d = false;
+plot_equiv_basis_2d = false;
+
+%% ========================================================================
+%% 1. Locate MAT data (multi-level fallback)
+%% ========================================================================
+
+mat_dir = ''; analysis_dir = '';
+
+% Relative search paths from the project root. The newest directory that
+% contains MAT files is selected automatically.
+data_dir_patterns = {
+    fullfile('performance_analysis_result', 'analysis_*', 'performance_mat_data'), ...
+    fullfile('performance_analysis_result', 'analysis_*', 'mat_data'), ...
+    fullfile('performance_analysis_result', 'performance_mat_data'), ...
+    fullfile('performance_analysis_result', 'mat_data'), ...
+    fullfile('performance_analysis', 'analysis_*', 'performance_mat_data'), ...
+    fullfile('performance_analysis', 'analysis_*', 'mat_data'), ...
+    fullfile('performance_analysis', 'performance_mat_data'), ...
+    fullfile('performance_analysis', 'mat_data'), ...
+    fullfile('performances-results-figures_and_datas', 'analysis_*', 'performance_mat_data'), ...
+    fullfile('performances-results-figures_and_datas', 'analysis_*', 'mat_data'), ...
+    fullfile('performances-results-figures_and_datas', 'performance_mat_data'), ...
+    fullfile('performances-results-figures_and_datas', 'mat_data'), ...
+};
+
+[mat_dir, analysis_dir, tried_paths] = locate_latest_mat_dir(root_dir, data_dir_patterns);
+
+if isempty(mat_dir)
+    error(['MAT data not found. Tried relative paths:\n  %s\n\n' ...
+           'Expected the uploaded result folder, for example:\n' ...
+           '  %s\n'], ...
+           strjoin(tried_paths, sprintf('\n  ')), ...
+           fullfile('performance_analysis_result', 'analysis_*', 'performance_mat_data'));
+end
+
+fprintf('Data source: %s\n', relative_path(root_dir, analysis_dir));
+fprintf('MAT data dir: %s\n', relative_path(root_dir, mat_dir));
+
+fprintf('========================================\n');
+fprintf('  SmartOTFS Visualization\n');
+fprintf('========================================\n');
+
+%% ========================================================================
+%% 2. Load all MAT data
+%% ========================================================================
+
+corr_file = resolve_mat_file(mat_dir, 'cross_correlation_AGI.mat', 'cross_correlation_*.mat');
+papr_file = resolve_mat_file(mat_dir, 'papr_ccdf_AGI.mat', 'papr_ccdf_*.mat');
+dd_file   = resolve_mat_file(mat_dir, 'dd_error_AGI.mat', 'dd_error_*.mat');
+metr_file = resolve_mat_file(mat_dir, 'time_domain_metrics_AGI.mat', 'time_domain_metrics_*.mat');
+probe_file = resolve_mat_file(mat_dir, 'probe_energy_AGI.mat', 'probe_energy_*.mat');
+ber_file   = resolve_mat_file(mat_dir, 'ber_results.mat', 'ber_results*.mat');
+equiv_basis_file = resolve_mat_file(mat_dir, 'equivalent_basis_AGI.mat', 'equivalent_basis_*.mat');
+visual_file = resolve_mat_file(mat_dir, 'smartotfs_visual_examples_AGI.mat', 'smartotfs_visual_examples_*.mat');
+
+has_corr = exist(corr_file, 'file');
+has_papr = exist(papr_file, 'file');
+has_dd   = exist(dd_file, 'file');
+has_metr = exist(metr_file, 'file');
+has_probe = exist(probe_file, 'file');
+has_ber   = exist(ber_file, 'file');
+has_visual = exist(visual_file, 'file');
+
+corr_data = struct(); papr_data = struct(); dd_data = struct(); metr_data = struct();
+probe_data = struct(); ber_data = struct(); visual_data = struct(); equiv_basis_data = struct();
+
+if has_corr, corr_data = load(corr_file); fprintf('  [OK] %s\n', get_filename(corr_file)); end
+if has_papr, papr_data = load(papr_file); fprintf('  [OK] %s\n', get_filename(papr_file)); end
+if has_dd,   dd_data = load(dd_file);     fprintf('  [OK] %s\n', get_filename(dd_file)); end
+if has_metr, metr_data = load(metr_file); fprintf('  [OK] %s\n', get_filename(metr_file)); end
+if has_probe, probe_data = load(probe_file); fprintf('  [OK] %s\n', get_filename(probe_file)); end
+if has_ber,  ber_data = load(ber_file);   fprintf('  [OK] %s\n', get_filename(ber_file)); end
+if has_visual, visual_data = load(visual_file); fprintf('  [OK] %s\n', get_filename(visual_file)); end
+has_equiv_basis = exist(equiv_basis_file, 'file');
+if has_equiv_basis, equiv_basis_data = load(equiv_basis_file); fprintf('  [OK] %s\n', get_filename(equiv_basis_file)); end
+
+configs = discover_config_labels(has_corr, corr_data, has_papr, papr_data, has_dd, dd_data, ...
+    has_metr, metr_data, has_probe, probe_data, has_visual, visual_data, ...
+    has_equiv_basis, equiv_basis_data, config_order);
+config_short = make_config_labels(configs, config_name_map);
+cfg_colors = make_config_styles(configs, config_order, color_palette);
+cfg_markers = make_config_styles(configs, config_order, marker_palette);
+num_cfg = numel(configs);
+
+if num_cfg == 0
+    error('No supported configuration fields found in MAT data. Expected fields such as corr_A, ccdf_G, err_I, or qam_B.');
+end
+fprintf('Active configs: %s\n', strjoin(configs, ', '));
+
+%% ========================================================================
+%% 3. Fig1: Time-domain IQ Waveform Comparison
+%% ========================================================================
+
+if has_visual
+    x_iq = visual_data.flat_index(:).';
+    figure('Name', 'Time-domain IQ Waveform Comparison', 'Position', [100 100 1000 330]);
+    t_iq = tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    nexttile; hold on;
+    plot(x_iq, visual_data.regulated_first_real(:).', '-', 'Color', target_color, 'LineWidth', 1.8);
+    plot(x_iq, visual_data.smart_first_real(:).', '--', 'Color', smart_color, 'LineWidth', 1.8);
+    hold off;
+    ylabel('Real Part Amplitude', 'FontSize', 14);
+    legend({target_label, smart_label}, 'Location', 'northeast', 'FontSize', 12);
+    grid on; xlim([x_iq(1), x_iq(end)]); set(gca, 'FontSize', 12);
+
+    nexttile; hold on;
+    plot(x_iq, visual_data.regulated_first_imag(:).', '-', 'Color', target_color, 'LineWidth', 1.8);
+    plot(x_iq, visual_data.smart_first_imag(:).', '--', 'Color', smart_color, 'LineWidth', 1.8);
+    hold off;
+    ylabel('Imaginary Part Amplitude', 'FontSize', 14);
+    legend({target_label, smart_label}, 'Location', 'northeast', 'FontSize', 12);
+    grid on; xlim([x_iq(1), x_iq(end)]); set(gca, 'FontSize', 12);
+    xlabel(t_iq, 'Flattened Index (MxN)', 'FontSize', 14);
+    fprintf('  [Fig1] Time-domain IQ waveform -- done.\n');
+end
+
+%% ========================================================================
+%% 4. Fig2: PSD Comparison
+%% ========================================================================
+
+if has_visual
+    figure('Name', 'PSD Comparison', 'Position', [120 120 1000 330]);
+    hold on;
+    plot(visual_data.psd_freq(:).', visual_data.regulated_psd_dB(:).', '-', 'Color', target_color, 'LineWidth', 1.8);
+    plot(visual_data.psd_freq(:).', visual_data.smart_psd_dB(:).', '--', 'Color', smart_color, 'LineWidth', 1.8);
+    hold off; xlabel('Normalized Frequency (cycles/sample)', 'FontSize', 14);
+    ylabel('PSD (dB/Hz)', 'FontSize', 14);
+    legend({target_label, smart_label}, 'Location', 'southeast', 'FontSize', 12);
+    grid on; xlim([visual_data.psd_freq(1), visual_data.psd_freq(end)]);
+    set(gca, 'FontSize', 12);
+    fprintf('  [Fig2] PSD comparison -- done.\n');
+end
+
+%% ========================================================================
+%% 5. Fig3: Cross-correlation Comparison
+%% ========================================================================
+
+if has_corr
+    L = 16 * 16; x_corr = -(L-1):(L-1);
+    figure('Name', 'Cross-Correlation Comparison', 'Position', [100 100 900 550]);
+    hold on;
+    plot(x_corr, corr_data.corr_target_auto, '-', 'Color', target_color, 'LineWidth', lw);
+    for i = 1:num_cfg
+        lbl = configs{i};
+        plot(x_corr, corr_data.(['corr_', lbl]), 'Color', cfg_colors{i}, ...
+             'LineWidth', lw);
+    end
+    hold off; xlabel('Delay Offset (sample)', 'FontSize', 16);
+    ylabel('Normalized Correlation Coefficient', 'FontSize', 16);
+    legend([{target_label}, config_short], 'Location', 'best', 'FontSize', 12);
+    grid on; xlim([-L+1, L-1]); set(gca, 'FontSize', 12);
+
+    fprintf('  [Fig3] Cross-correlation -- done.\n');
+end
+
+%% ========================================================================
+%% 6. Fig4: PAPR CCDF Comparison
+%% ========================================================================
+
+if has_papr
+    figure('Name', 'PAPR CCDF', 'Position', [150 150 900 550]);
+    hold on;
+    semilogy(papr_data.gamma, papr_data.ccdf_target, '-', 'Color', target_color, 'LineWidth', lw);
+    for i = 1:num_cfg
+        lbl = configs{i};
+        semilogy(papr_data.gamma, papr_data.(['ccdf_', lbl]), ...
+                 'Color', cfg_colors{i}, 'LineWidth', lw);
+    end
+    hold off; xlabel('PAPR Threshold (dB)', 'FontSize', 16);
+    ylabel('CCDF P(PAPR > Threshold)', 'FontSize', 16);
+    legend([{target_label}, config_short], 'Location', 'best', 'FontSize', 12);
+    grid on; xlim([papr_data.gamma(1), papr_data.gamma(end)]); set(gca, 'FontSize', 12);
+    fprintf('  [Fig4] PAPR CCDF -- done.\n');
+end
+
+%% ========================================================================
+%% 7. Fig5: DD-domain Error Heatmap (1x3)
+%% ========================================================================
+
+if has_dd
+    eps_val = 1e-12;
+    if plot_dd_error_heatmap
+        figure('Name', 'DD Error Heatmap', 'Position', [100 100 1200 360]);
+        t_dd_heat = tiledlayout(1, num_cfg, 'TileSpacing', 'compact', 'Padding', 'compact');
+        dd_fields = strcat('err_', configs);
+        plot_titles = config_short;
+
+        for i = 1:num_cfg
+            nexttile; err_mat = dd_data.(dd_fields{i});
+            if all(err_mat(:) == 0)
+                err_db = zeros(size(err_mat));
+            else
+                err_db = 10 * log10(err_mat + eps_val);
+            end
+            imagesc(err_db); colorbar; axis xy; clim([-40 0]); colormap(gca, 'parula');
+            title(plot_titles{i}, 'FontSize', 22, 'FontWeight', 'bold');
+            set(gca, 'FontSize', 20);
+            cb = colorbar;
+            cb.FontSize = 20;
+        end
+        xlabel(t_dd_heat, 'Doppler index (n)', 'FontSize', 24);
+        ylabel(t_dd_heat, 'Delay index (m)', 'FontSize', 24);
+        fprintf('  [Fig5] DD error heatmap -- done.\n');
+    else
+        fprintf('  [Fig5] DD error heatmap -- skipped.\n');
+    end
+
+    %% 8. Fig6: DD-domain Error Profiles
+    M_val = 16; N_val = 16;
+    figure('Name', 'DD Error Profiles', 'Position', [150 150 1000 450]);
+    t_dd_profile = tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    nexttile; hold on;
+    for i = 1:num_cfg
+        lbl = configs{i};
+        plot(1:M_val, 10*log10(dd_data.(['profile_tau_', lbl]) + eps_val), ...
+             cfg_markers{i}, 'Color', cfg_colors{i}, 'LineWidth', lw, 'MarkerSize', ms);
+    end
+    hold off; xlabel('Delay Index (m)', 'FontSize', 18);
+    title('Error Profile along Delay Axis', 'FontSize', 14, 'FontWeight', 'bold');
+    legend(config_short, 'Location', 'best', 'FontSize', 12); grid on; set(gca, 'FontSize', 14);
+
+    nexttile; hold on;
+    for i = 1:num_cfg
+        lbl = configs{i};
+        plot(1:N_val, 10*log10(dd_data.(['profile_nu_', lbl]) + eps_val), ...
+             cfg_markers{i}, 'Color', cfg_colors{i}, 'LineWidth', lw, 'MarkerSize', ms);
+    end
+    hold off; xlabel('Doppler Index (n)', 'FontSize', 18);
+    title('Error Profile along Doppler Axis', 'FontSize', 14, 'FontWeight', 'bold');
+    legend(config_short, 'Location', 'best', 'FontSize', 12); grid on; set(gca, 'FontSize', 14);
+    ylabel(t_dd_profile, 'Mean MSE (dB)', 'FontSize', 18);
+    fprintf('  [Fig6] DD error profiles -- done.\n');
+end
+
+%% ========================================================================
+%% 9. Fig7: QAM Constellation Mapping
+%% ========================================================================
+
+if has_visual
+    qam_fields = strcat('qam_', configs);
+    qam_titles = config_short;
+    qam_rows = 2; qam_cols = 4;
+    figure('Name', 'QAM Constellation Mapping', 'Position', [80 80 1300 640]);
+    t_qam = tiledlayout(qam_rows, qam_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
+    for i = 1:num_cfg
+        pts = visual_data.(qam_fields{i});
+        nexttile;
+        scatter(real(pts(:)), imag(pts(:)), 12, 'b', 'filled');
+        axis equal; grid on; box on;
+        lim = max(1.0, 1.15 * max(abs([real(pts(:)); imag(pts(:))])));
+        xlim([-lim, lim]); ylim([-lim, lim]);
+        title(qam_titles{i}, 'FontSize', 11, 'FontWeight', 'normal');
+        set(gca, 'FontSize', 11, 'Box', 'on');
+    end
+    xlabel(t_qam, 'In-phase (I)', 'FontSize', 14);
+    ylabel(t_qam, 'Quadrature (Q)', 'FontSize', 14);
+    fprintf('  [Fig7] QAM constellation mapping -- done (%d frames).\n', ...
+            double(visual_data.constellation_frames));
+end
+
+%% ========================================================================
+%% 10. Fig8 & Fig9: Probe Energy (3D + 2D)
+%% ========================================================================
+
+if has_probe
+    m0 = double(probe_data.probe_m); n0 = double(probe_data.probe_n);
+    M_val = double(probe_data.M); N_val = double(probe_data.N);
+    fine_res = 200;
+    x_fine = linspace(0, N_val-1, fine_res);
+    y_fine = linspace(0, M_val-1, fine_res);
+    [X_fine, Y_fine] = meshgrid(x_fine, y_fine);
+
+    probe_configs = [{'Target'}, configs];
+    probe_labels = [{target_label}, config_short];
+    probe_rows = 2; probe_cols = 4;
+
+    % 3D
+    figure('Name', 'Probe Energy 3D', 'Position', [30 30 1800 950]);
+    for i = 1:numel(probe_configs)
+        ax = subplot(probe_rows, probe_cols, i); hold on;
+        lbl = probe_configs{i};
+        if ~isfield(probe_data, ['energy_', lbl]), continue; end
+        E16 = double(probe_data.(['energy_', lbl]));
+        E_smooth = interp2(0:N_val-1, 0:M_val-1, E16, X_fine, Y_fine, 'spline');
+        E_smooth = max(0, E_smooth);
+        surf(X_fine, Y_fine, E_smooth, 'EdgeColor', 'none', 'FaceColor', 'interp', 'FaceAlpha', 0.88);
+        shading interp; colormap(gca, 'hot');
+        [~, pk] = max(E_smooth(:)); [pr, pc] = ind2sub(size(E_smooth), pk);
+        scatter3(X_fine(pr, pc), Y_fine(pr, pc), max(E_smooth(:)), 100, 'p', ...
+                 'MarkerFaceColor', 'g', 'MarkerEdgeColor', 'w', 'LineWidth', 2);
+        conc = probe_data.(['concentration_', lbl]);
+        view(128, 24);
+        axis tight;
+        xlabel('Doppler (n)', 'FontSize', 10);
+        ylabel('Delay (m)', 'FontSize', 10);
+        zlabel('Energy', 'FontSize', 10);
+        title(sprintf('%s\nConc=%.4f', probe_labels{i}, conc), 'FontSize', 12, 'FontWeight', 'bold');
+        set(gca, 'FontSize', 9);
+        cb = colorbar;
+        cb.FontSize = 9;
+        cb.Location = 'eastoutside';
+    end
+    fprintf('  [Fig8] Probe energy 3D -- done.\n');
+
+    % 2D
+    figure('Name', 'Probe Energy 2D', 'Position', [60 60 1500 760]);
+    for i = 1:numel(probe_configs)
+        ax = subplot(probe_rows, probe_cols, i); hold on;
+        lbl = probe_configs{i};
+        if ~isfield(probe_data, ['energy_', lbl]), continue; end
+        E16 = double(probe_data.(['energy_', lbl]));
+        E_smooth = interp2(0:N_val-1, 0:M_val-1, E16, X_fine, Y_fine, 'spline');
+        E_smooth = max(eps, E_smooth);
+        EdB = 10 * log10(E_smooth); vmax = max(EdB(:));
+        imagesc([x_fine(1) x_fine(end)], [y_fine(1) y_fine(end)], EdB, [vmax-50 vmax]);
+        colormap(gca, 'hot'); set(gca, 'YDir', 'normal');
+        plot(n0, m0, 'p', 'MarkerSize', 16, 'LineWidth', 2, ...
+             'MarkerFaceColor', 'g', 'MarkerEdgeColor', 'w');
+        conc = probe_data.(['concentration_', lbl]);
+        axis image;
+        xlabel('Doppler (n)', 'FontSize', 10); ylabel('Delay (m)', 'FontSize', 10);
+        title(sprintf('%s\nConc=%.4f', probe_labels{i}, conc), 'FontSize', 11, 'FontWeight', 'bold');
+        set(gca, 'FontSize', 9);
+        cb = colorbar;
+        cb.FontSize = 9;
+    end
+    fprintf('  [Fig9] Probe energy 2D -- done.\n');
+end
+
+%% ========================================================================
+%% EB. Equivalent Basis Extraction Analysis (3D + 2D + Metrics)
+%% ========================================================================
+
+if has_equiv_basis
+    m0 = double(equiv_basis_data.m0); n0 = double(equiv_basis_data.n0);
+    Mv = double(equiv_basis_data.M); Nv = double(equiv_basis_data.N);
+
+    eb_configs = [{'std'}, configs];
+    eb_labels = [{target_label}, config_short];
+    fine_res = 120;
+    [eb_rows, eb_cols] = subplot_grid(numel(eb_configs));
+
+    % --- EB-1: Equivalent Basis 3D (disabled) ---
+    if plot_equiv_basis_3d
+        figure('Name', 'Equivalent Basis 3D', 'Position', [60 60 1200 900]);
+        for i = 1:numel(eb_configs)
+            ax = subplot(eb_rows, eb_cols, i); hold on;
+            lbl = eb_configs{i};
+            fld = ['energy_basis_', lbl];
+            if ~isfield(equiv_basis_data, fld), continue; end
+            E16 = double(equiv_basis_data.(fld));
+            [Xq, Yq] = meshgrid(linspace(0, Nv-1, fine_res), linspace(0, Mv-1, fine_res));
+            E_smooth = interp2(0:Nv-1, 0:Mv-1, E16, Xq, Yq, 'spline');
+            E_smooth = max(0, E_smooth);
+            surf(Xq, Yq, E_smooth, 'EdgeColor', 'none', 'FaceColor', 'interp', 'FaceAlpha', 0.85);
+            shading interp; colormap(gca, 'hot');
+            [~, pk] = max(E_smooth(:)); [pr, pc] = ind2sub(size(E_smooth), pk);
+            scatter3(Xq(pr, pc), Yq(pr, pc), max(E_smooth(:)), 100, 'p', ...
+                     'MarkerFaceColor', 'g', 'MarkerEdgeColor', 'w', 'LineWidth', 2);
+            c_max = max(E16(:)) / (sum(E16(:)) + 1e-15);
+            c_target = E16(m0+1, n0+1) / (sum(E16(:)) + 1e-15);
+            view(130, 28); xlabel('Doppler (n)'); ylabel('Delay (m)'); zlabel('Energy');
+            title(sprintf('%s\nMaxC=%.3f, TargetC=%.3f', eb_labels{i}, c_max, c_target), 'FontWeight', 'bold');
+            colorbar;
+        end
+        fprintf('  [Fig EB-1] Equivalent basis 3D -- done.\n');
+    else
+        fprintf('  [Fig EB-1] Equivalent basis 3D -- skipped.\n');
+    end
+
+    % --- EB-2: Equivalent Basis 2D (disabled) ---
+    if plot_equiv_basis_2d
+        figure('Name', 'Equivalent Basis 2D', 'Position', [100 80 1000 800]);
+        for i = 1:numel(eb_configs)
+            ax = subplot(eb_rows, eb_cols, i); hold on;
+            lbl = eb_configs{i};
+            fld = ['energy_basis_', lbl];
+            if ~isfield(equiv_basis_data, fld), continue; end
+            E16 = double(equiv_basis_data.(fld));
+            EdB = 10 * log10(E16 + 1e-15); vmax = max(EdB(:));
+            imagesc([0 Nv-1], [0 Mv-1], EdB, [vmax-50 vmax]);
+            colormap(gca, 'hot'); set(gca, 'YDir', 'normal');
+            plot(n0, m0, 'p', 'MarkerSize', 16, 'LineWidth', 2, ...
+                 'MarkerFaceColor', 'g', 'MarkerEdgeColor', 'w');
+            % Main lobe ratio
+            main_mask = zeros(Mv, Nv);
+            for mm = 1:Mv
+                for nn = 1:Nv
+                    if abs(mm-1 - m0) <= 1
+                        dc = min(abs(nn-1 - n0), Nv - abs(nn-1 - n0));
+                        if dc <= 1, main_mask(mm, nn) = 1; end
+                    end
+                end
+            end
+            c_main = sum(E16(logical(main_mask))) / (sum(E16(:)) + 1e-15);
+            xlabel('Doppler (n)'); ylabel('Delay (m)');
+            title(sprintf('%s\nMain=%.3f', eb_labels{i}, c_main), 'FontWeight', 'bold');
+            colorbar;
+        end
+        fprintf('  [Fig EB-2] Equivalent basis 2D -- done.\n');
+    else
+        fprintf('  [Fig EB-2] Equivalent basis 2D -- skipped.\n');
+    end
+
+    % --- EB-3: Equivalent Basis Metrics ---
+    if any(cellfun(@(lbl) isfield(equiv_basis_data, ['metrics_', lbl]), configs))
+        figure('Name', 'Equivalent Basis Error Metrics', 'Position', [100 100 1250 560]);
+        metric_labels_eb = {'Sidelobe Leakage', 'Basis NMSE'};
+        n_met = numel(metric_labels_eb);
+        x_eb = 1:n_met;
+        group_span_eb = 0.74;
+        width_eb = group_span_eb / max(num_cfg, 1) * 0.82;
+        cfg_lbls_eb = configs;
+        if num_cfg == 1
+            offsets_eb = 0;
+        else
+            offsets_eb = linspace(-group_span_eb/2, group_span_eb/2, num_cfg);
+        end
+
+        hold on;
+        for j = 1:num_cfg
+            lbl = cfg_lbls_eb{j};
+            fld = ['metrics_', lbl];
+            if ~isfield(equiv_basis_data, fld), continue; end
+            vals_all = double(equiv_basis_data.(fld));
+            idx_map = containers.Map({'max_concentration', 'target_ratio', 'main_lobe_ratio', ...
+                                       'sidelobe_leakage', 'nmse_to_std', 'corr_to_std'}, 1:6);
+            sidelobe_leakage = vals_all(idx_map('sidelobe_leakage'));
+            nmse_to_std = vals_all(idx_map('nmse_to_std'));
+            vals = [10*log10(max(sidelobe_leakage, eps)), ...
+                    10*log10(max(nmse_to_std, eps))];
+            bar(x_eb + offsets_eb(j), vals, width_eb, 'FaceColor', cfg_colors{j}, ...
+                'DisplayName', config_short{j});
+        end
+        hold off;
+        set(gca, 'XTick', x_eb, 'XTickLabel', metric_labels_eb, 'FontSize', 16, 'Box', 'on');
+        xlim([0.45, n_met + 0.55]);
+        ylabel('Error / leakage level (dB)', 'FontSize', 20);
+        % title('Equivalent Basis Error Metrics Comparison', 'FontSize', 14, 'FontWeight', 'bold');
+        legend('Location', 'best', 'FontSize', 14);
+        grid on;
+        eb_metric_fig_path = fullfile(output_dir, 'equivalent_basis_metrics.png');
+        save_current_figure(eb_metric_fig_path);
+        fprintf('  [Fig EB-3] saved: %s\n', relative_path(root_dir, eb_metric_fig_path));
+        fprintf('  [Fig EB-3] Equivalent basis metrics -- done.\n');
+
+        % NMSE summary
+        fprintf('\n--- Equivalent Basis NMSE to Std (dB) ---\n');
+        for j = 1:num_cfg
+            lbl = cfg_lbls_eb{j};
+            fld = ['metrics_', lbl];
+            if isfield(equiv_basis_data, fld)
+                vals_all = double(equiv_basis_data.(fld));
+                idx_map = containers.Map({'max_concentration', 'target_ratio', 'main_lobe_ratio', ...
+                                           'sidelobe_leakage', 'nmse_to_std', 'corr_to_std'}, 1:6);
+                nmse_val = vals_all(idx_map('nmse_to_std'));
+                fprintf('  %s: %.2f dB\n', config_short{j}, 10*log10(max(nmse_val, 1e-15)));
+            end
+        end
+    end
+end
+
+%% ========================================================================
+%% 11. Fig10+: BER Curves (AWGN / EVA / WATER)
+%% ========================================================================
+
+if has_ber
+    SNR_dB = ber_data.SNR_dB(:).';
+    M_ber = double(ber_data.M); N_ber = double(ber_data.N);
+    mod_order = double(ber_data.modulation_order);
+    num_frames = double(ber_data.num_frames);
+
+    ber_signals = [{'Target'}, configs];
+    ber_labels = [{target_label}, config_short];
+    ber_colors = [{target_color}, cfg_colors(:).'];
+    ber_markers = [{'o-'}, cfg_markers(:).'];
+
+    % Detect channels
+    channels = {};
+    fields_ber = fieldnames(ber_data);
+    for f = 1:numel(fields_ber)
+        tokens = regexp(fields_ber{f}, '^ber_([A-Za-z0-9]+)_(.+)$', 'tokens', 'once');
+        if ~isempty(tokens)
+            if strcmp(tokens{1}, 'Target') || any(strcmp(configs, tokens{1}))
+                ch = tokens{2};
+                if ~any(strcmp(channels, ch))
+                    channels{end+1} = ch; %#ok<AGROW>
+                end
+            end
+        end
+    end
+    % Sort channels: AWGN, EVA, WATER
+    preferred = {'AWGN', 'EVA', 'WATER'};
+    ordered = {};
+    for p = 1:numel(preferred)
+        hit = find(strcmpi(channels, preferred{p}), 1);
+        if ~isempty(hit), ordered{end+1} = channels{hit}; end %#ok<AGROW>
+    end
+    for c = 1:numel(channels)
+        if ~any(strcmp(ordered, channels{c}))
+            ordered{end+1} = channels{c}; %#ok<AGROW>
+        end
+    end
+    channels = ordered;
+    if ~any(strcmpi(channels, 'WATER'))
+        fprintf(['  [WARN] WATER BER data not found in %s. ' ...
+                 'Regenerate ber_results.mat with fields such as ber_Target_WATER and ber_A_WATER.\n'], ...
+                get_filename(ber_file));
+    end
+
+    ms_ber = 8; lw_ber = 3.5;
+    for ch_idx = 1:numel(channels)
+        channel = channels{ch_idx};
+        figure('Name', ['BER - ', channel], 'Position', ...
+               [100+50*(ch_idx-1), 100+50*(ch_idx-1), 800, 600]);
+        hold on;
+        all_ber = [];
+        legend_entries = {};
+        for i = 1:numel(ber_signals)
+            lbl = ber_signals{i};
+            ber_field = ['ber_', lbl, '_', channel];
+            if isfield(ber_data, ber_field)
+                ber_vals = ber_data.(ber_field)(:).';
+                ber_vals = max(ber_vals, 1e-8);  % avoid log(0)
+                all_ber = [all_ber; ber_vals(:)]; %#ok<AGROW>
+                semilogy(SNR_dB, ber_vals, ber_markers{i}, ...
+                         'Color', ber_colors{i}, 'LineWidth', lw_ber, ...
+                         'MarkerSize', ms_ber, 'MarkerFaceColor', 'none');
+                legend_entries{end+1} = ber_labels{i}; %#ok<AGROW>
+            end
+        end
+        hold off;
+        ber_axis_label_font = 14;
+        ber_axis_tick_font = 12;
+        xlabel('SNR (dB)', 'FontSize', ber_axis_label_font);
+        ylabel('BER', 'FontSize', ber_axis_label_font);
+        % title(sprintf('BER Performance -- %s Channel  (M=%g, N=%g, %g-QAM, %g frames)', ...
+        %       channel, M_ber, N_ber, mod_order, num_frames), ...
+        %       'FontSize', 14, 'FontWeight', 'bold');
+        legend(legend_entries, 'Location', 'southwest', 'FontSize', 11);
+        grid on; set(gca, 'FontSize', ber_axis_tick_font, 'Box', 'on');
+        adjust_ber_axis(all_ber);
+        ber_fig_path = fullfile(output_dir, ['ber_', lower(channel), '.png']);
+        save_current_figure(ber_fig_path);
+        fprintf('  [Fig10-%s] saved: %s\n', upper(channel), relative_path(root_dir, ber_fig_path));
+    end
+    fprintf('  [Fig10+] BER curves -- done (%d channels).\n', numel(channels));
+end
+
+%% ========================================================================
+%% 9. Print Summary Statistics
+%% ========================================================================
+
+fprintf('\n========================================\n');
+fprintf('  Performance Analysis Summary\n');
+fprintf('========================================\n');
+
+% --- Time-domain Metrics (MSE / EVM / PSD error) ---
+if has_metr
+    fprintf('\n--- Time-domain Metrics ---\n');
+    print_table_header(config_short);
+    print_metric_row('MSE (%)', collect_config_values(metr_data, 'mse_mean_', configs), '%.4f');
+    print_metric_row('EVM (%)', collect_config_values(metr_data, 'evm_mean_', configs), '%.4f');
+    print_metric_row('PSDerr (%)', collect_config_values(metr_data, 'psd_error_mean_', configs), '%.4f');
+    print_metric_row('PAPR (dB)', collect_config_values(metr_data, 'papr_mean_', configs), '%.2f');
+end
+
+% --- Cross-correlation ---
+if has_corr
+    fprintf('\n--- Cross-correlation ---\n');
+    print_table_header(config_short);
+    print_metric_row('Peak mean', collect_config_values(corr_data, 'peak_height_mean_', configs), '%.4f');
+    print_metric_row('Peak std', collect_config_values(corr_data, 'peak_height_std_', configs), '%.4f');
+    print_metric_row('Shift mean', collect_config_values(corr_data, 'peak_shift_mean_', configs), '%.2f');
+end
+
+% --- PAPR ---
+if has_papr
+    fprintf('\n--- PAPR (dB) ---\n');
+    papr_labels = [config_short, {target_label}];
+    print_table_header(papr_labels);
+    print_metric_row('Mean', [collect_config_values(papr_data, 'papr_', configs, '_mean'), read_scalar_field(papr_data, 'papr_target_mean')], '%.2f');
+    print_metric_row('Std', [collect_config_values(papr_data, 'papr_', configs, '_std'), read_scalar_field(papr_data, 'papr_target_std')], '%.2f');
+end
+
+% --- DD Error ---
+if has_dd
+    fprintf('\n--- DD-domain Overall MSE (dB) ---\n');
+    print_table_header(config_short);
+    print_metric_row('Overall MSE', collect_config_values(dd_data, 'overall_mse_dB_', configs), '%.2f');
+end
+
+% --- Probe Energy ---
+if has_probe
+    fprintf('\n--- Probe Energy Concentration ---\n');
+    for i = 1:num_cfg
+        lbl = configs{i};
+        if isfield(probe_data, ['concentration_', lbl])
+            fprintf('  %s: %.4f\n', config_short{i}, probe_data.(['concentration_', lbl]));
+        end
+    end
+    fprintf('  %s (IDFT): 1.0000 (delta function)\n', target_label);
+end
+
+% --- BER ---
+if has_ber
+    SNR_dB = ber_data.SNR_dB(:).';
+    for c = 1:numel(channels)
+        ch = channels{c};
+        fprintf('\n--- BER @ 10dB (%s) ---\n', ch);
+        snr10 = find(SNR_dB == 10, 1);
+        if ~isempty(snr10)
+            for i = 1:numel(ber_signals)
+                lbl = ber_signals{i};
+                fld = ['ber_', lbl, '_', ch];
+                if isfield(ber_data, fld)
+                    fprintf('  %s: %.2e\n', ber_labels{i}, ber_data.(fld)(snr10));
+                end
+            end
+        end
+    end
+end
+
+fprintf('========================================\n');
+fprintf('\nVisualization complete.\n');
+
+%% ========================================================================
+%% Local Functions
+%% ========================================================================
+
+function adjust_ber_axis(ber_values)
+    % Adaptive BER y-axis (matching plot_ber_ADG.m style)
+    current_font_size = get(gca, 'FontSize');
+    ber_values = ber_values(:);
+    ber_values = ber_values(isfinite(ber_values) & ber_values > 0);
+    if isempty(ber_values)
+        set(gca, 'YScale', 'log', 'FontSize', current_font_size, 'YMinorGrid', 'on');
+        ylim([1e-6, 1]); yticks(10.^(-6:0));
+        return;
+    end
+    min_ber = min(ber_values); max_ber = max(ber_values);
+    y_lo_exp = floor(log10(min_ber)); y_hi_exp = ceil(log10(max_ber));
+    y_lo_exp = max(y_lo_exp, -6); y_hi_exp = min(y_hi_exp, 0);
+    if y_hi_exp <= y_lo_exp
+        y_hi_exp = min(y_lo_exp + 1, 0);
+    end
+    if y_hi_exp <= y_lo_exp
+        y_lo_exp = y_hi_exp - 1;
+    end
+    tick_exp = y_lo_exp:y_hi_exp;
+    tick_vals = 10.^tick_exp;
+    set(gca, 'YScale', 'log', 'FontSize', current_font_size, 'YMinorGrid', 'on');
+    ylim([10^y_lo_exp, 10^y_hi_exp]);
+    yticks(tick_vals);
+    tick_labels = cell(1, numel(tick_vals));
+    for k = 1:numel(tick_vals)
+        if tick_exp(k) == 0
+            tick_labels{k} = '1';
+        else
+            tick_labels{k} = sprintf('10^{%d}', tick_exp(k));
+        end
+    end
+    yticklabels(tick_labels);
+end
+
+function [mat_dir, analysis_dir, tried_paths] = locate_latest_mat_dir(root_dir, data_dir_patterns)
+    mat_dir = '';
+    analysis_dir = '';
+    tried_paths = data_dir_patterns(:).';
+    candidates = struct('path', {}, 'datenum', {});
+
+    for i = 1:numel(data_dir_patterns)
+        rel_pattern = data_dir_patterns{i};
+        rel_parts = regexp(rel_pattern, '[\\/]+', 'split');
+
+        if numel(rel_parts) == 3 && ~isempty(strfind(rel_parts{2}, '*'))
+            parent_dir = fullfile(root_dir, rel_parts{1});
+            analysis_matches = dir(fullfile(parent_dir, rel_parts{2}));
+            analysis_matches = analysis_matches([analysis_matches.isdir]);
+
+            for j = 1:numel(analysis_matches)
+                if strcmp(analysis_matches(j).name, '.') || strcmp(analysis_matches(j).name, '..')
+                    continue;
+                end
+
+                candidate_dir = fullfile(parent_dir, analysis_matches(j).name, rel_parts{3});
+                if exist(candidate_dir, 'dir') && ~isempty(dir(fullfile(candidate_dir, '*.mat')))
+                    candidates(end+1).path = candidate_dir; %#ok<AGROW>
+                    candidates(end).datenum = analysis_dir_rank(analysis_matches(j));
+                end
+            end
+        else
+            candidate_dir = fullfile(root_dir, rel_pattern);
+            if exist(candidate_dir, 'dir') && ~isempty(dir(fullfile(candidate_dir, '*.mat')))
+                d = dir(candidate_dir);
+                candidates(end+1).path = candidate_dir; %#ok<AGROW>
+                candidates(end).datenum = max([d.datenum]);
+            end
+        end
+    end
+
+    if isempty(candidates)
+        return;
+    end
+
+    [~, sort_idx] = sort([candidates.datenum], 'descend');
+    mat_dir = candidates(sort_idx(1)).path;
+    analysis_dir = fileparts(mat_dir);
+end
+
+function file_path = resolve_mat_file(mat_dir, preferred_name, fallback_pattern)
+    preferred_path = fullfile(mat_dir, preferred_name);
+    if exist(preferred_path, 'file')
+        file_path = preferred_path;
+        return;
+    end
+
+    matches = dir(fullfile(mat_dir, fallback_pattern));
+    matches = matches(~[matches.isdir]);
+    if isempty(matches)
+        file_path = preferred_path;
+        return;
+    end
+
+    [~, sort_idx] = sort([matches.datenum], 'descend');
+    file_path = fullfile(matches(sort_idx(1)).folder, matches(sort_idx(1)).name);
+end
+
+function rank_value = analysis_dir_rank(dir_info)
+    tokens = regexp(dir_info.name, '^analysis_(\d{8})_(\d{6})$', 'tokens', 'once');
+    if isempty(tokens)
+        rank_value = dir_info.datenum;
+        return;
+    end
+
+    try
+        rank_value = datenum([tokens{1}, tokens{2}], 'yyyymmddHHMMSS');
+    catch
+        rank_value = dir_info.datenum;
+    end
+end
+
+function rel = relative_path(root_dir, path_value)
+    rel = path_value;
+    root_dir = char(root_dir);
+    path_value = char(path_value);
+    if numel(path_value) > numel(root_dir) && strcmpi(path_value(1:numel(root_dir)), root_dir)
+        rel = path_value(numel(root_dir)+1:end);
+        if startsWith(rel, filesep)
+            rel = rel(2:end);
+        end
+    end
+end
+
+function configs = discover_config_labels(has_corr, corr_data, has_papr, papr_data, has_dd, dd_data, ...
+    has_metr, metr_data, has_probe, probe_data, has_visual, visual_data, ...
+    has_equiv_basis, equiv_basis_data, config_order)
+
+    configs = {};
+    if has_corr
+        configs = collect_labels_from_fields(configs, fieldnames(corr_data), '^corr_([A-Za-z0-9]+)$');
+    end
+    if has_papr
+        configs = collect_labels_from_fields(configs, fieldnames(papr_data), '^ccdf_([A-Za-z0-9]+)$');
+        configs = collect_labels_from_fields(configs, fieldnames(papr_data), '^papr_([A-Za-z0-9]+)_(mean|std)$');
+    end
+    if has_dd
+        configs = collect_labels_from_fields(configs, fieldnames(dd_data), '^err_([A-Za-z0-9]+)$');
+        configs = collect_labels_from_fields(configs, fieldnames(dd_data), '^profile_(tau|nu)_([A-Za-z0-9]+)$', 2);
+        configs = collect_labels_from_fields(configs, fieldnames(dd_data), '^overall_mse_dB_([A-Za-z0-9]+)$');
+    end
+    if has_metr
+        configs = collect_labels_from_fields(configs, fieldnames(metr_data), '^(mse|evm|psd_error|papr)_mean_([A-Za-z0-9]+)$', 2);
+    end
+    if has_probe
+        configs = collect_labels_from_fields(configs, fieldnames(probe_data), '^energy_([A-Za-z0-9]+)$');
+        configs = collect_labels_from_fields(configs, fieldnames(probe_data), '^concentration_([A-Za-z0-9]+)$');
+    end
+    if has_visual
+        configs = collect_labels_from_fields(configs, fieldnames(visual_data), '^qam_([A-Za-z0-9]+)$');
+    end
+    if has_equiv_basis
+        configs = collect_labels_from_fields(configs, fieldnames(equiv_basis_data), '^energy_basis_([A-Za-z0-9]+)$');
+        configs = collect_labels_from_fields(configs, fieldnames(equiv_basis_data), '^metrics_([A-Za-z0-9]+)$');
+    end
+
+    configs = sort_config_labels(configs, config_order);
+end
+
+function configs = collect_labels_from_fields(configs, fields, pattern, token_idx)
+    if nargin < 4
+        token_idx = 1;
+    end
+
+    for i = 1:numel(fields)
+        tokens = regexp(fields{i}, pattern, 'tokens', 'once');
+        if isempty(tokens)
+            continue;
+        end
+        configs = add_config_label(configs, tokens{token_idx});
+    end
+end
+
+function configs = add_config_label(configs, label)
+    excluded = {'Target', 'target', 'std', 'auto'};
+    if any(strcmp(label, excluded)) || any(strcmp(configs, label))
+        return;
+    end
+    configs{end+1} = label; %#ok<AGROW>
+end
+
+function sorted = sort_config_labels(configs, config_order)
+    sorted = {};
+    for i = 1:numel(config_order)
+        hit = find(strcmp(configs, config_order{i}), 1);
+        if ~isempty(hit)
+            sorted{end+1} = configs{hit}; %#ok<AGROW>
+        end
+    end
+
+    extras = {};
+    for i = 1:numel(configs)
+        if ~any(strcmp(sorted, configs{i}))
+            extras{end+1} = configs{i}; %#ok<AGROW>
+        end
+    end
+    extras = sort(extras);
+    sorted = [sorted, extras];
+end
+
+function labels = make_config_labels(configs, config_name_map)
+    labels = cell(size(configs));
+    for i = 1:numel(configs)
+        if isKey(config_name_map, configs{i})
+            labels{i} = config_name_map(configs{i});
+        else
+            labels{i} = ['Config ', configs{i}];
+        end
+    end
+end
+
+function styles = make_config_styles(configs, config_order, palette)
+    styles = cell(size(configs));
+    for i = 1:numel(configs)
+        order_idx = find(strcmp(config_order, configs{i}), 1);
+        if isempty(order_idx)
+            order_idx = i;
+        end
+        palette_idx = mod(order_idx - 1, numel(palette)) + 1;
+        styles{i} = palette{palette_idx};
+    end
+end
+
+function [n_rows, n_cols] = subplot_grid(n_items)
+    n_cols = min(4, max(1, ceil(sqrt(n_items))));
+    n_rows = ceil(n_items / n_cols);
+end
+
+function values = collect_config_values(data, prefix, configs, suffix)
+    if nargin < 4
+        suffix = '';
+    end
+
+    values = nan(1, numel(configs));
+    for i = 1:numel(configs)
+        values(i) = read_scalar_field(data, [prefix, configs{i}, suffix]);
+    end
+end
+
+function value = read_scalar_field(data, field_name)
+    if isfield(data, field_name)
+        raw_value = data.(field_name);
+        value = double(raw_value(1));
+    else
+        value = nan;
+    end
+end
+
+function print_table_header(labels)
+    fprintf('%-12s', 'Metric');
+    for i = 1:numel(labels)
+        fprintf(' %-18s', labels{i});
+    end
+    fprintf('\n');
+end
+
+function print_metric_row(metric_name, values, value_format)
+    fprintf('%-12s', metric_name);
+    for i = 1:numel(values)
+        if isnan(values(i))
+            fprintf(' %-18s', 'NaN');
+        else
+            fprintf([' %-18', value_format(2:end)], values(i));
+        end
+    end
+    fprintf('\n');
+end
+
+function save_current_figure(file_path)
+    try
+        exportgraphics(gcf, file_path, 'Resolution', 300);
+    catch
+        saveas(gcf, file_path);
+    end
+end
+
+function name = get_filename(path_value)
+    [~, base, ext] = fileparts(path_value);
+    name = [base, ext];
+end

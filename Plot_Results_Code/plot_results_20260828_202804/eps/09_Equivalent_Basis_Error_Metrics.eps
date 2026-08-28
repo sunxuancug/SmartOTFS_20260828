@@ -1,0 +1,292 @@
+%!PS-Adobe-3.0 EPSF-3.0
+%%Creator: (MATLAB, The MathWorks, Inc. Version 25.1.0.2943329 R2025a. Operating System: Microsoft Windows 11 专业版)
+%%Title: ./09_Equivalent_Basis_Error_Metrics.eps
+%%CreationDate: 2026-08-28T20:29:44
+%%Pages: (atend)
+%%BoundingBox:    0     0   777   371
+%%LanguageLevel: 3
+%%EndComments
+/bd{bind def}bind def
+/ld{load def}bd
+/GR/grestore ld
+/GS/gsave ld
+/RM/rmoveto ld
+/C/curveto ld
+/t/show ld
+/L/lineto ld
+/RL/rlineto ld
+/ML/setmiterlimit ld
+/CT/concat ld
+/f/fill ld
+/N/newpath ld
+/S/stroke ld
+/CC/setcmykcolor ld
+/A/ashow ld
+/cp/closepath ld
+/RC/setrgbcolor ld
+/LJ/setlinejoin ld
+/GC/setgray ld
+/LW/setlinewidth ld
+/LC/setlinecap ld
+/LJ/setlinejoin ld
+/SD/setdash ld
+/M/moveto ld
+/TX/translate ld
+/R/rotate ld
+/SC/scale ld
+
+/CIRC {0 360 arc}bd
+/F {exch findfont exch scalefont setfont}bd
+/edef{ exch def } def
+/scaleImg{ % width height outputDPI scaleImg
+   /outputDPI edef
+   /height edef
+   /width edef
+   /psDPI 72 def
+   /sDPI psDPI outputDPI div def % DPI scale
+   width sDPI mul % width * (psDPI / outputDPI)
+   height sDPI mul
+   scale
+} def
+
+% LineAttribute methods.linewidth linejoin linecap [dashpattern] dashOffset colorVal(s) <method>
+/LAG {setgray setdash setlinecap setlinejoin setlinewidth} bd
+/LAR {setrgbcolor setdash setlinecap setlinejoin setlinewidth} bd
+/LAC {setcmykcolor setdash setlinecap setlinejoin setlinewidth} bd
+
+% draw line impl
+/DL { % VertexList NVerts StartPt DL
+  N moveto { lineto } repeat stroke} def
+% draw unfilled polyline impl
+/DPL { % VertexList NVerts StartPt DPL
+  N moveto { lineto } repeat closepath stroke} def
+% draw filled polyline impl
+/DPLF { % VertexList NVerts StartPt DPLF
+  N moveto { lineto } repeat closepath fill } def
+/DRL { % VertexList NVerts StartPt DRL
+  N moveto { rlineto } repeat stroke} def
+% draw unfilled polyline impl
+/DRPL { % VertexList NVerts StartPt DRPL
+  N moveto { rlineto } repeat closepath stroke} def
+% draw filled polyline impl
+/DRPLF { % VertexList NVerts StartPt DRPLF
+  N moveto { rlineto } repeat closepath fill } def
+
+%%Page: 1 1
+%%PageBoundingBox:    0     0   777   371
+%%BeginPageSetup
+N
+0 0 M
+776.2 0 L
+776.2 370.83 L
+0 370.83 L
+cp
+clip
+1.00 GC
+0 370.83 776.2 370.83 776.2 0 3 0 0 DPLF
+[  0.75 0 0 -0.75 0 370.825] CT
+%%EndPageSetup
+-96.07 -34.5 TX
+1.00 LW
+1131 42 1131 498 163 498 3 163 42 DPLF
+0.67 2 0 [] 0 0.87 LAG
+416.52 498 1 416.52 42 DL
+877.48 498 1 877.48 42 DL
+1131 498 1 163 498 DL
+1131 422 1 163 422 DL
+1131 346 1 163 346 DL
+1131 270 1 163 270 DL
+1131 194 1 163 194 DL
+1131 118 1 163 118 DL
+1131 42 1 163 42 DL
+0.67 2 2 [] 0 0.13 LAG
+1131 498 1 163 498 DL
+1131 42 1 163 42 DL
+416.52 488.32 1 416.52 498 DL
+416.52 42 1 416.52 51.68 DL
+877.48 488.32 1 877.48 498 DL
+877.48 42 1 877.48 51.68 DL
+/Helvetica 21.3333 F
+GS
+330.02 524.93 M
+1 -1 scale
+(Sidelobe Leakage) t
+GR
+GS
+817.48 524.93 M
+1 -1 scale
+(Basis NMSE) t
+GR
+/Helvetica 26.6667 F
+GS
+115.07 420 M
+1 -1 scale
+90 R
+(Error / Leakage Level \(dB\)) t
+GR
+163 42 1 163 498 DL
+1131 42 1 1131 498 DL
+172.68 498 1 163 498 DL
+1131 498 1 1121.32 498 DL
+172.68 422 1 163 422 DL
+1131 422 1 1121.32 422 DL
+172.68 346 1 163 346 DL
+1131 346 1 1121.32 346 DL
+172.68 270 1 163 270 DL
+1131 270 1 1121.32 270 DL
+172.68 194 1 163 194 DL
+1131 194 1 1121.32 194 DL
+172.68 118 1 163 118 DL
+1131 118 1 1121.32 118 DL
+172.68 42 1 163 42 DL
+1131 42 1 1121.32 42 DL
+/Helvetica 21.3333 F
+GS
+125.07 505.5 M
+1 -1 scale
+(-60) t
+GR
+GS
+125.07 429.5 M
+1 -1 scale
+(-50) t
+GR
+GS
+125.07 353.5 M
+1 -1 scale
+(-40) t
+GR
+GS
+125.07 277.5 M
+1 -1 scale
+(-30) t
+GR
+GS
+125.07 201.5 M
+1 -1 scale
+(-20) t
+GR
+GS
+125.07 125.5 M
+1 -1 scale
+(-10) t
+GR
+GS
+144.07 49.5 M
+1 -1 scale
+(0) t
+GR
+0.67 2 0 [] 0 0.13 LAG
+1131 42 1 163 42 DL
+0.30 0.75 0.93 RC
+265.95 42 265.95 360.74 225.99 360.74 3 225.99 42 DPLF
+726.9 42 726.9 356.06 686.94 356.06 3 686.94 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+265.95 42 265.95 360.74 225.99 360.74 3 225.99 42 DPL
+726.9 42 726.9 356.06 686.94 356.06 3 686.94 42 DPL
+0.42 0.56 0.93 RC
+322.8 42 322.8 301.02 282.84 301.02 3 282.84 42 DPLF
+783.75 42 783.75 299.47 743.8 299.47 3 743.8 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+322.8 42 322.8 301.02 282.84 301.02 3 282.84 42 DPL
+783.75 42 783.75 299.47 743.8 299.47 3 743.8 42 DPL
+0.47 0.77 0.19 RC
+379.65 42 379.65 319.28 339.69 319.28 3 339.69 42 DPLF
+840.6 42 840.6 316.43 800.65 316.43 3 800.65 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+379.65 42 379.65 319.28 339.69 319.28 3 339.69 42 DPL
+840.6 42 840.6 316.43 800.65 316.43 3 800.65 42 DPL
+0.93 0.69 0.13 RC
+436.5 42 436.5 322.2 396.54 322.2 3 396.54 42 DPLF
+897.46 42 897.46 320.71 857.5 320.71 3 857.5 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+436.5 42 436.5 322.2 396.54 322.2 3 396.54 42 DPL
+897.46 42 897.46 320.71 857.5 320.71 3 857.5 42 DPL
+0.95 0.50 0.22 RC
+493.35 42 493.35 360.66 453.4 360.66 3 453.4 42 DPLF
+954.31 42 954.31 358.56 914.35 358.56 3 914.35 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+493.35 42 493.35 360.66 453.4 360.66 3 453.4 42 DPL
+954.31 42 954.31 358.56 914.35 358.56 3 914.35 42 DPL
+0.91 0.35 0.56 RC
+550.2 42 550.2 389.47 510.25 389.47 3 510.25 42 DPLF
+1011.16 42 1011.16 380.72 971.2 380.72 3 971.2 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+550.2 42 550.2 389.47 510.25 389.47 3 510.25 42 DPL
+1011.16 42 1011.16 380.72 971.2 380.72 3 971.2 42 DPL
+0.64 0.08 0.18 RC
+607.06 42 607.06 449.78 567.1 449.78 3 567.1 42 DPLF
+1068.01 42 1068.01 446.12 1028.05 446.12 3 1028.05 42 DPLF
+0.67 0 0 [] 0 0.13 LAG
+607.06 42 607.06 449.78 567.1 449.78 3 567.1 42 DPL
+1068.01 42 1068.01 446.12 1028.05 446.12 3 1028.05 42 DPL
+1.00 GC
+1090 79 1090 233 849 233 3 849 79 DPLF
+0.30 0.75 0.93 RC
+893 83.62 893 99.38 853 99.38 3 853 83.62 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 99.38 893 83.62 853 83.62 3 853 99.38 DPL
+0.42 0.56 0.93 RC
+893 105.12 893 120.88 853 120.88 3 853 105.12 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 120.88 893 105.12 853 105.12 3 853 120.88 DPL
+0.47 0.77 0.19 RC
+893 126.62 893 142.38 853 142.38 3 853 126.62 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 142.38 893 126.62 853 126.62 3 853 142.38 DPL
+0.93 0.69 0.13 RC
+893 148.12 893 163.88 853 163.88 3 853 148.12 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 163.88 893 148.12 853 148.12 3 853 163.88 DPL
+0.95 0.50 0.22 RC
+893 169.62 893 185.38 853 185.38 3 853 169.62 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 185.38 893 169.62 853 169.62 3 853 185.38 DPL
+0.91 0.35 0.56 RC
+893 191.12 893 206.88 853 206.88 3 853 191.12 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 206.88 893 191.12 853 191.12 3 853 206.88 DPL
+0.64 0.08 0.18 RC
+893 212.62 893 228.38 853 228.38 3 853 212.62 DPLF
+0.67 0 0 [] 0 0.13 LAG
+893 228.38 893 212.62 853 212.62 3 853 228.38 DPL
+/Helvetica 18.6667 F
+GS
+896 98 M
+1 -1 scale
+(Std-TF OTFS) t
+GR
+GS
+896 119.5 M
+1 -1 scale
+(GQA-TF OTFS) t
+GR
+GS
+896 141 M
+1 -1 scale
+(Differential-TF OTFS) t
+GR
+GS
+896 162.5 M
+1 -1 scale
+(MLA-TF OTFS) t
+GR
+GS
+896 184 M
+1 -1 scale
+(Dual-Axis-TF OTFS) t
+GR
+GS
+896 205.5 M
+1 -1 scale
+(BoltAttention-TF OTFS) t
+GR
+GS
+896 227 M
+1 -1 scale
+(Smart OTFS) t
+GR
+1090 233 1090 79 849 79 3 849 233 DPL
+%%Trailer
+%%Pages: 1
+%%EOF
